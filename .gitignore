@@ -1,0 +1,8 @@
+/foxd
+/**/*/.DS_STORE
+.DS_STORE
+.idea
+/output
+__debug_bin
+*.pb.go
+/node_modules

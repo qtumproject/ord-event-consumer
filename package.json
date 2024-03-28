@@ -1,0 +1,21 @@
+{
+  "name": "qord_main_index",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bitcoinjs-lib": "^6.1.5",
+    "dotenv": "^16.4.5",
+    "mysql": "^2.18.1",
+    "pg": "^8.11.3",
+    "qtumjs-lib": "^0.0.8",
+    "tiny-secp256k1": "^2.2.3",
+    "util": "^0.12.5"
+  }
+}
