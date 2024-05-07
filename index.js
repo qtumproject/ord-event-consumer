@@ -12,7 +12,7 @@ var qtumjs = require('qtumjs-lib');
 
 var ecc = require('tiny-secp256k1');
 const process = require('process');
-const { execSync } = require("child_process");
+const {execSync} = require("child_process");
 const readline = require('readline');
 
 bitcoin.initEccLib(ecc)
@@ -24,12 +24,12 @@ process.env["NODE_TLS_REJECT_UNAUTHORIZED"] = 0;
 
 const promise_limit = 50000
 
-const db_pool  = mysql.createPool({
+const db_pool = mysql.createPool({
     user: process.env.DB_USER || '',
     host: process.env.DB_HOST || '',
     database: process.env.DB_DATABASE || '',
     password: process.env.DB_PASSWD || '',
-    connectionLimit : 50, // 连接池中的最大连接数
+    connectionLimit: 50, // 连接池中的最大连接数
     connectTimeout: 30000,
 });
 
@@ -52,7 +52,7 @@ if (network_type == "mainnet") {
 } else if (network_type == "testnet") {
     network = qtumjs.networks.qtum_testnet
     network_folder = "testnet3/"
-}else {
+} else {
     console.error("Unknown network type: " + network_type)
     process.exit(1)
 }
@@ -103,7 +103,8 @@ async function main_index() {
         }
 
         let ord_last_block_height_q = await new Promise((resolve, reject) => {
-            db_pool.query(`SELECT coalesce(max(block_height), -1) as max_height from block_hashes;`, (error, results, fields) => {
+            db_pool.query(`SELECT coalesce(max(block_height), -1) as max_height
+                           from block_hashes;`, (error, results, fields) => {
                 if (error) {
                     console.error(error.message);
                     reject(error);
@@ -131,7 +132,7 @@ async function main_index() {
             rpc_argument = " --bitcoin-rpc-user " + bitcoin_rpc_user + " --bitcoin-rpc-pass " + bitcoin_rpc_password
         }
         let network_argument = ""
-       if (network == qtumjs.networks.qtum_testnet) {
+        if (network == qtumjs.networks.qtum_testnet) {
             network_argument = " --chain testnet"
         }
         let ord_index_cmd = ord_binary + network_argument + " --bitcoin-data-dir " +
@@ -145,8 +146,7 @@ async function main_index() {
                 process.exit(1)
             }
             execSync(ord_index_cmd, {stdio: 'inherit'})
-        }
-        catch (err) {
+        } catch (err) {
             console.error("ERROR ON ORD!!!")
             console.error(err)
             process.chdir(current_directory);
@@ -157,7 +157,7 @@ async function main_index() {
         process.chdir(current_directory);
         let ord_index_tm = +(new Date()) - ord_index_st_tm
 
-        const fileStream = fs.createReadStream(ord_folder + network_folder + "log_file.txt", { encoding: 'UTF-8' });
+        const fileStream = fs.createReadStream(ord_folder + network_folder + "log_file.txt", {encoding: 'UTF-8'});
         const rl = readline.createInterface({
             input: fileStream,
             crlfDelay: Infinity
@@ -173,7 +173,8 @@ async function main_index() {
         }
 
         let current_height_q = await new Promise((resolve, reject) => {
-            db_pool.query(`SELECT coalesce(max(block_height), -1) as max_height from block_hashes;`, (error, results, fields) => {
+            db_pool.query(`SELECT coalesce(max(block_height), -1) as max_height
+                           from block_hashes;`, (error, results, fields) => {
                 if (error) {
                     console.error(error.message);
                     reject(error);
@@ -184,13 +185,14 @@ async function main_index() {
         });
         let current_height = current_height_q[0].max_height
 
-        console.log("Checking for possible reorg")
+        console.log("Checking for possible reorg start")
         for (const l of lines_index) {
             if (l.trim() == "") continue
             let parts = l.split(';')
             if (parts[2].trim() == "new_block") {
                 let block_height = parseInt(parts[1].trim())
-                if (block_height > current_height) continue
+                if (block_height % 10000 == 0) console.log("Checking for possible reorg, height: " + block_height)
+                if (block_height > current_height || block_height < first_inscription_height) continue
                 console.warn("Block repeating, possible reorg!!")
                 let blockhash = parts[3].trim()
                 let blockhash_db_q = await new Promise((resolve, reject) => {
@@ -203,7 +205,8 @@ async function main_index() {
                         }
                     });
                 });
-                if (blockhash_db_q[0].block_hash != blockhash) {
+
+                if (current_height_q.length > 0 && blockhash_db_q[0].block_hash != blockhash) {
                     let reorg_st_tm = +(new Date())
                     console.error("Reorg detected at block_height " + block_height)
                     await handle_reorg(block_height)
@@ -230,6 +233,8 @@ async function main_index() {
             }
         }
 
+        console.log("Checking for possible reorg end")
+
         // some sanity checks and checks for possible early exit of ord
         let last_start_idx = null
         let last_start_block = null
@@ -240,10 +245,14 @@ async function main_index() {
         let ioffset = 0
         for (let i = 0; i < lenlines; i++) {
             let l = lines[i + ioffset]
-            if (l.trim() == "") { continue }
+            if (l.trim() == "") {
+                continue
+            }
 
             let parts = l.split(';')
-            if (parts[0] != "cmd") { continue }
+            if (parts[0] != "cmd") {
+                continue
+            }
             if (parts[2] == "block_start") {
                 if (last_start_idx == null && i != 0) {
                     console.error("Faulty block_start position: " + l)
@@ -260,12 +269,10 @@ async function main_index() {
                         delete block_start_idxes[block_height + temp_i]
                         temp_i += 1
                     }
-                }
-                else if (!next_expected_start) {
+                } else if (!next_expected_start) {
                     console.error("two start but bigger block_height in latter: " + l)
                     process.exit(1)
-                }
-                else if (i != ioffset && i - 1 != last_end_idx) {
+                } else if (i != ioffset && i - 1 != last_end_idx) {
                     console.error("block_start not right after block_end: " + l)
                     process.exit(1)
                 }
@@ -273,8 +280,7 @@ async function main_index() {
                 last_start_block = block_height
                 next_expected_start = false
                 block_start_idxes[block_height] = i
-            }
-            else if (parts[2] == "block_end") {
+            } else if (parts[2] == "block_end") {
                 if (next_expected_start) {
                     console.error("NOT expected block_end: " + l)
                     process.exit(1)
@@ -286,9 +292,8 @@ async function main_index() {
                 }
                 last_end_idx = i
                 next_expected_start = true
-            }
-            else {
-                continue
+            } else {
+
             }
         }
         if (!next_expected_start) {
@@ -315,10 +320,17 @@ async function main_index() {
 
         let ord_sql_st_tm = +(new Date())
 
-        let sql_query_insert_ord_number_to_id = `INSERT into ord_number_to_id (inscription_number, inscription_id, cursed_for_brc20, block_height) values (?, ?, ?, ?);`
-        let sql_query_insert_transfer = `INSERT into ord_transfers (id, inscription_id, block_height, old_satpoint, new_satpoint, new_pkScript, new_wallet, sent_as_fee, new_output_value) values (?, ?, ?, ?, ?, ?, ?, ?, ?);`
-        let sql_query_insert_content      = `INSERT into ord_content (inscription_id, content, content_type, metaprotocol, block_height) values (?, ?, ?, ?, ?);`
-        let sql_query_insert_text_content = `INSERT into ord_content (inscription_id, text_content, content_type, metaprotocol, block_height) values (?, ?, ?, ?, ?);`
+        let sql_query_insert_ord_number_to_id = `INSERT into ord_number_to_id (inscription_number, inscription_id, cursed_for_brc20, block_height)
+                                                 values (?, ?, ?, ?);`
+        let sql_query_insert_transfer = `INSERT into ord_transfers (id, inscription_id, block_height, old_satpoint,
+                                                                    new_satpoint, new_pkScript, new_wallet, sent_as_fee,
+                                                                    new_output_value)
+                                         values (?, ?, ?, ?, ?, ?, ?, ?, ?);`
+        let sql_query_insert_content = `INSERT into ord_content (inscription_id, content, content_type, metaprotocol, block_height)
+                                        values (?, ?, ?, ?, ?);`
+        let sql_query_insert_text_content = `INSERT into ord_content (inscription_id, text_content, content_type,
+                                                                      metaprotocol, block_height)
+                                             values (?, ?, ?, ?, ?);`
 
         let ord_sql_query_count = 0
         let new_inscription_count = 0
@@ -326,11 +338,17 @@ async function main_index() {
 
         let max_height = -1
         for (const l of lines_index) {
-            if (l.trim() == '') { continue }
+            if (l.trim() == '') {
+                continue
+            }
             let parts = l.split(';')
 
-            if (parts[0] != "cmd") { continue }
-            if (parts[2] != "new_block") { continue }
+            if (parts[0] != "cmd") {
+                continue
+            }
+            if (parts[2] != "new_block") {
+                continue
+            }
             if (parseInt(parts[1]) > max_height) max_height = parseInt(parts[1])
         }
 
@@ -340,7 +358,8 @@ async function main_index() {
 
 
         let current_transfer_id_q = await new Promise((resolve, reject) => {
-            db_pool.query(`SELECT coalesce(max(id), -1) as maxid from ord_transfers;`, (error, results, fields) => {
+            db_pool.query(`SELECT coalesce(max(id), -1) as maxid
+                           from ord_transfers;`, (error, results, fields) => {
                 if (error) {
                     console.error(error.message);
                     reject(error);
@@ -354,13 +373,19 @@ async function main_index() {
         let future_sent_as_fee_transfer_id = {}
         let running_promises = []
         let idx = 0
+        console.log("db_height: " + current_height + " -> " + max_height)
+
         for (const l of lines) {
-            if (l.trim() == '') { continue }
+            if (l.trim() == '') {
+                continue
+            }
             idx += 1
             if (idx % 10000 == 0) console.log(idx + " / " + lines.length)
 
             let parts = l.split(';')
-            if (parts[0] != "cmd") { continue }
+            if (parts[0] != "cmd") {
+                continue
+            }
 
             if (running_promises.length > promise_limit) {
                 await Promise.all(running_promises)
@@ -369,8 +394,8 @@ async function main_index() {
 
             let block_height = parseInt(parts[1])
             if (block_height <= current_height) continue
-            if (parts[2] == "block_start") continue
-            else if (parts[2] == "block_end") continue
+            if (parts[2] == "block_start")
+            else if (parts[2] == "block_end")
             else if (parts[2] == "insert") {
                 if (parts[3] == "number_to_id") {
                     if (block_height > current_height) {
@@ -378,14 +403,12 @@ async function main_index() {
                         new_inscription_count += 1
                         ord_sql_query_count += 1
                     }
-                }
-                else if (parts[3] == "early_transfer_sent_as_fee") {
+                } else if (parts[3] == "early_transfer_sent_as_fee") {
                     if (block_height > current_height) {
                         future_sent_as_fee_transfer_id[parts[4]] = [current_transfer_id, false, block_height]
                         current_transfer_id += 1
                     }
-                }
-                else if (parts[3] == "transfer") {
+                } else if (parts[3] == "transfer") {
                     if (block_height > current_height) {
                         if ((parts[4] in future_sent_as_fee_transfer_id) && (future_sent_as_fee_transfer_id[parts[4]][2] == block_height)) {
                             //这个if分支本质上没有使用当前的current_transfer_id，而是使用的之前的一个交易的transfer_id，所以current_transfer_id不需要递增
@@ -410,8 +433,7 @@ async function main_index() {
                             ord_sql_query_count += 1
                         }
                     }
-                }
-                else if (parts[3] == "content") {
+                } else if (parts[3] == "content") {
                     if (block_height > current_height) {
                         // get string after 7th semicolon
                         let content = parts.slice(8).join(';')
@@ -436,20 +458,30 @@ async function main_index() {
         }
         await Promise.all(running_promises)
         running_promises = []
+        console.log("Updating block_hashes")
 
         for (const l of lines_index) {
-            if (l.trim() == '') { continue }
+            if (l.trim() == '') {
+                continue
+            }
             let parts = l.split(';')
 
-            if (parts[0] != "cmd") { continue }
-            if (parts[2] != "new_block") { continue }
+            if (parts[0] != "cmd") {
+                continue
+            }
+            if (parts[2] != "new_block") {
+                continue
+            }
 
             let block_height = parseInt(parts[1])
-            if (block_height < first_inscription_height) { continue }
+            if (block_height < current_height) {
+                continue
+            }
             let blockhash = parts[3].trim()
 
             await new Promise((resolve, reject) => {
-                db_pool.query(`INSERT IGNORE INTO block_hashes (block_height, block_hash) values (?, ?);`,
+                db_pool.query(`INSERT
+                        IGNORE INTO block_hashes (block_height, block_hash) values (?, ?);`,
                     [block_height, blockhash], (error, results, fields) => {
                         if (error) {
                             console.error(error.message);
@@ -459,6 +491,7 @@ async function main_index() {
                         }
                     })
             });
+            console.log("height " + block_height + " block_hash updated");
         }
 
         let ord_sql_tm = +(new Date()) - ord_sql_st_tm
@@ -527,25 +560,30 @@ o.w. it cannot decode 512057cd4cfa03f27f7b18c2fe45fe2c2e0f7b5ccb034af4dec098977c
 */
 function wallet_from_pkscript(pkscript) {
     try {
-        let address = bitcoin.payments.p2tr({ output: Buffer.from(pkscript, 'hex'), network: network })
+        let address = bitcoin.payments.p2tr({output: Buffer.from(pkscript, 'hex'), network: network})
         return address.address
-    } catch { /* try others */ }
+    } catch { /* try others */
+    }
     try {
-        let address = bitcoin.payments.p2wsh({ output: Buffer.from(pkscript, 'hex'), network: network })
+        let address = bitcoin.payments.p2wsh({output: Buffer.from(pkscript, 'hex'), network: network})
         return address.address
-    } catch { /* try others */ }
+    } catch { /* try others */
+    }
     try {
-        let address = bitcoin.payments.p2wpkh({ output: Buffer.from(pkscript, 'hex'), network: network })
+        let address = bitcoin.payments.p2wpkh({output: Buffer.from(pkscript, 'hex'), network: network})
         return address.address
-    } catch { /* try others */ }
+    } catch { /* try others */
+    }
     try {
-        let address = bitcoin.payments.p2sh({ output: Buffer.from(pkscript, 'hex'), network: network })
+        let address = bitcoin.payments.p2sh({output: Buffer.from(pkscript, 'hex'), network: network})
         return address.address
-    } catch { /* try others */ }
+    } catch { /* try others */
+    }
     try {
-        let address = bitcoin.payments.p2pkh({ output: Buffer.from(pkscript, 'hex'), network: network })
+        let address = bitcoin.payments.p2pkh({output: Buffer.from(pkscript, 'hex'), network: network})
         return address.address
-    } catch { /* end */ }
+    } catch { /* end */
+    }
 
     return null
 }
@@ -554,43 +592,55 @@ async function handle_reorg(block_height) {
     let last_correct_blockheight = block_height - 1
 
     await new Promise((resolve, reject) => {
-        db_pool.query(`DELETE from ord_transfers where block_height > ?;`, [last_correct_blockheight], (error, results, fields) => {
-                if (error) {
-                    reject(error);
-                }
-            })
-        db_pool.query(`DELETE from ord_number_to_id where block_height > ?;`, [last_correct_blockheight], (error, results, fields) => {
+        db_pool.query(`DELETE
+                       from ord_transfers
+                       where block_height > ?;`, [last_correct_blockheight], (error, results, fields) => {
             if (error) {
                 reject(error);
             }
         })
-        db_pool.query(`DELETE from ord_content where block_height > ?;`, [last_correct_blockheight], (error, results, fields) => {
+        db_pool.query(`DELETE
+                       from ord_number_to_id
+                       where block_height > ?;`, [last_correct_blockheight], (error, results, fields) => {
             if (error) {
                 reject(error);
             }
         })
-        db_pool.query(`DELETE from block_hashes where block_height > ?;`, [last_correct_blockheight], (error, results, fields) => {
+        db_pool.query(`DELETE
+                       from ord_content
+                       where block_height > ?;`, [last_correct_blockheight], (error, results, fields) => {
+            if (error) {
+                reject(error);
+            }
+        })
+        db_pool.query(`DELETE
+                       from block_hashes
+                       where block_height > ?;`, [last_correct_blockheight], (error, results, fields) => {
             if (error) {
                 reject(error);
             }
         })
 
-        db_pool.query(`SELECT setval('ord_transfers_id_seq', max(id)) from ord_transfers;`, (error, results, fields) => {
+        db_pool.query(`SELECT setval('ord_transfers_id_seq', max(id))
+                       from ord_transfers;`, (error, results, fields) => {
             if (error) {
                 reject(error);
             }
         })
-        db_pool.query(`SELECT setval('ord_number_to_id_id_seq', max(id)) from ord_number_to_id;`, (error, results, fields) => {
+        db_pool.query(`SELECT setval('ord_number_to_id_id_seq', max(id))
+                       from ord_number_to_id;`, (error, results, fields) => {
             if (error) {
                 reject(error);
             }
         })
-        db_pool.query(`SELECT setval('ord_content_id_seq', max(id)) from ord_content;`, (error, results, fields) => {
+        db_pool.query(`SELECT setval('ord_content_id_seq', max(id))
+                       from ord_content;`, (error, results, fields) => {
             if (error) {
                 reject(error);
             }
         })
-        db_pool.query(`SELECT setval('block_hashes_id_seq', max(id)) from block_hashes;`, (error, results, fields) => {
+        db_pool.query(`SELECT setval('block_hashes_id_seq', max(id))
+                       from block_hashes;`, (error, results, fields) => {
             if (error) {
                 reject(error);
             }
@@ -603,25 +653,27 @@ async function fix_db_from_version(db_version) {
     if (db_version == 3) {
 
         await new Promise((resolve, reject) => {
-            db_pool.query(`CREATE TABLE public.ord_network_type (
-      id bigserial NOT NULL,
-      network_type text NOT NULL,
-      CONSTRAINT ord_network_type_pk PRIMARY KEY (id)
-    );`, (error, results, fields) => {
-                    if (error) {
-                        console.log(error)
-                        reject(error);
-                    }
-                });
-
-            // v3 only supported mainnet
-            db_pool.query(`INSERT INTO ord_network_type (network_type) VALUES (?);`, ['mainnet'],
-                (error, results, fields) => {
+            db_pool.query(`CREATE TABLE public.ord_network_type
+                           (
+                               id           bigserial NOT NULL,
+                               network_type text      NOT NULL,
+                               CONSTRAINT ord_network_type_pk PRIMARY KEY (id)
+                           );`, (error, results, fields) => {
                 if (error) {
                     console.log(error)
                     reject(error);
                 }
-            })
+            });
+
+            // v3 only supported mainnet
+            db_pool.query(`INSERT INTO ord_network_type (network_type)
+                           VALUES (?);`, ['mainnet'],
+                (error, results, fields) => {
+                    if (error) {
+                        console.log(error)
+                        reject(error);
+                    }
+                })
             resolve()
         });
 
@@ -652,7 +704,9 @@ async function check_db() {
                 console.error("db_version mismatch, will be automatically fixed")
                 await fix_db_from_version(db_version)
                 await new Promise((resolve, reject) => {
-                    db_pool.query(`UPDATE ord_indexer_version SET db_version = ?, indexer_version = ?;`,
+                    db_pool.query(`UPDATE ord_indexer_version
+                                   SET db_version = ?,
+                                       indexer_version = ?;`,
                         [DB_VERSION, INDEXER_VERSION], (error, results, fields) => {
                             if (error) {
                                 reject(error);
@@ -673,7 +727,8 @@ async function check_db() {
     }
 
     let res_q = await new Promise((resolve, reject) => {
-        db_pool.query(`SELECT * from ord_network_type LIMIT 1;`, (error, results, fields) => {
+        db_pool.query(`SELECT *
+                       from ord_network_type LIMIT 1;`, (error, results, fields) => {
             if (error) {
                 console.error(error.message);
                 reject(error);
@@ -693,7 +748,8 @@ async function check_db() {
         process.exit(1)
     }
     let current_height_q = await new Promise((resolve, reject) => {
-        db_pool.query(`SELECT coalesce(max(block_height), -1) as max_height from block_hashes;`, (error, results, fields) => {
+        db_pool.query(`SELECT coalesce(max(block_height), -1) as max_height
+                       from block_hashes;`, (error, results, fields) => {
             if (error) {
                 console.error(error.message);
                 reject(error);
@@ -706,7 +762,8 @@ async function check_db() {
     console.log("current_height: " + current_height)
 
     let current_transfer_height_q = await new Promise((resolve, reject) => {
-        db_pool.query(`SELECT coalesce(max(block_height), -1) as max_height from ord_transfers;`, (error, results, fields) => {
+        db_pool.query(`SELECT coalesce(max(block_height), -1) as max_height
+                       from ord_transfers;`, (error, results, fields) => {
             if (error) {
                 console.error(error.message);
                 reject(error);
@@ -719,7 +776,8 @@ async function check_db() {
     console.log("current_transfer_height: " + current_transfer_height)
 
     let current_ord_number_to_id_height_q = await new Promise((resolve, reject) => {
-        db_pool.query(`SELECT coalesce(max(block_height), -1) as max_height from ord_number_to_id;`, (error, results, fields) => {
+        db_pool.query(`SELECT coalesce(max(block_height), -1) as max_height
+                       from ord_number_to_id;`, (error, results, fields) => {
             if (error) {
                 console.error(error.message);
                 reject(error);
@@ -732,7 +790,8 @@ async function check_db() {
     console.log("current_ord_number_to_id_height: " + current_ord_number_to_id_height)
 
     let current_content_height_q = await new Promise((resolve, reject) => {
-        db_pool.query(`SELECT coalesce(max(block_height), -1) as max_height from ord_content;`, (error, results, fields) => {
+        db_pool.query(`SELECT coalesce(max(block_height), -1) as max_height
+                       from ord_content;`, (error, results, fields) => {
             if (error) {
                 console.error(error.message);
                 reject(error);
@@ -747,20 +806,43 @@ async function check_db() {
     await new Promise((resolve, reject) => {
         if (current_height < current_transfer_height) {
             console.error("current_height < current_transfer_height")
-            db_pool.query(`DELETE from ord_transfers where block_height > ?;`, [current_height])
-            reject()
+            db_pool.query(`DELETE
+                           from ord_transfers
+                           where block_height > ?;`, [current_height], (error, results, fields) => {
+                if (error) {
+                    console.error(error.message);
+                    reject(error);
+                } else {
+                    resolve(results);
+                }
+            })
         }
         if (current_height < current_ord_number_to_id_height) {
             console.error("current_height < current_ord_number_to_id_height")
-            db_pool.query(`DELETE from ord_number_to_id where block_height > ?;`, [current_height])
-            reject()
+            db_pool.query(`DELETE
+                           from ord_number_to_id
+                           where block_height > ?;`, [current_height], (error, results, fields) => {
+                if (error) {
+                    console.error(error.message);
+                    reject(error);
+                } else {
+                    resolve(results);
+                }
+            })
 
         }
         if (current_height < current_content_height) {
             console.error("current_height < current_content_height")
-            db_pool.query(`DELETE from ord_content where block_height > ?;`, [current_height])
-            reject()
-
+            db_pool.query(`DELETE
+                           from ord_content
+                           where block_height > ?;`, [current_height], (error, results, fields) => {
+                if (error) {
+                    console.error(error.message);
+                    reject(error);
+                } else {
+                    resolve(results);
+                }
+            })
         }
         resolve()
         //
@@ -779,4 +861,5 @@ async function check_db() {
     console.log("checking db end")
 
 }
+
 main_index()
